@@ -10,6 +10,8 @@
 #include <unistd.h>
 #include <errno.h>
 
+extern int PAGE_SIZE;
+
 /**
  * @brief scan_pages的参数
  *
