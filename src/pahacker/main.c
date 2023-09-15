@@ -46,7 +46,7 @@ void *scan_pages(void *_args)
         {
             addr_t phaddr = entry.pfn * PAGE_SIZE;
             read_page(page, args->pid, args->addr);
-            save_page(page, entry.pfn * PAGE_SIZE); // TODO
+            save_page(page, entry.pfn * PAGE_SIZE);
         }
         args->addr += PAGE_SIZE;
     }
@@ -116,6 +116,7 @@ void scan(unsigned short pid)
 int main()
 {
     setuid(0);
+    init_pahdump();
     PAGE_SIZE = sysconf(_SC_PAGESIZE);
     for (unsigned short pid = 1;; pid++)
     {
