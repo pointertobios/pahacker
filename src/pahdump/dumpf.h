@@ -14,7 +14,7 @@ typedef unsigned char u8;
  * dump文件大小一定是PAGE_SIZE的整数倍，
  * 以PAGE_SIZE长度为单位分割，一个单位称为一个块。
  *
- * 每一个块都有一个id,id从0开始依次往后排。
+ * 每一个块都有一个id,id从1开始依次往后排，块id 0是非法id，作为空值使用。
  *
  * 物理地址管理使用平衡二叉树实现。
  */
@@ -36,14 +36,21 @@ typedef struct
     usize patree;
 } dumpf_metablock;
 
+typedef struct
+{
+    u8 wlock;
+} dumpf_blockbase;
+
 /**
  * @brief 块地图块
  *
  */
 typedef struct
 {
+    dumpf_blockbase base;
     usize next_block;
-    u8 wlock;
+    usize block_count;  // 此块中能够管理的块数量
+    usize block_limit;  // 此块最多能管理的块的数量
     u8 map[0];
 } dumpf_mapblock;
 
@@ -80,8 +87,8 @@ typedef struct
  */
 typedef struct
 {
+    dumpf_blockbase base;
     usize next_block;
-    u8 wlock;
     usize length;    // 可以容纳的addrp_node总数
     usize available; // 有效的addrp_node个数
     addrp_node addrtree[0];
