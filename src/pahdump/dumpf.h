@@ -4,7 +4,9 @@
 
 typedef unsigned long long addr_t;
 typedef unsigned long long usize;
+
 typedef unsigned char u8;
+typedef u8 bool;
 
 /**
  * dump文件格式
@@ -39,6 +41,7 @@ typedef struct
 typedef struct
 {
     u8 wlock;
+    usize next_block;
 } dumpf_blockbase;
 
 /**
@@ -48,9 +51,8 @@ typedef struct
 typedef struct
 {
     dumpf_blockbase base;
-    usize next_block;
-    usize block_count;  // 此块中能够管理的块数量
-    usize block_limit;  // 此块最多能管理的块的数量
+    usize block_count; // 此块中能够管理的块数量
+    usize block_limit; // 此块最多能管理的块的数量
     u8 map[0];
 } dumpf_mapblock;
 
@@ -78,6 +80,7 @@ typedef struct
 {
     addr_pair pair;
     usize left, right;
+    bool available;
 } addrp_node;
 
 /**
@@ -88,11 +91,13 @@ typedef struct
 typedef struct
 {
     dumpf_blockbase base;
-    usize next_block;
     usize length;    // 可以容纳的addrp_node总数
     usize available; // 有效的addrp_node个数
+    usize start_nid; // addrtree中首个节点的nid
     addrp_node addrtree[0];
 } dumpf_addrtreeblock;
+
+#define DUMPF_ADDRTREEBLK_AVALABLE ((PAGE_SIZE - sizeof(dumpf_addrtreeblock)) / sizeof(addrp_node))
 
 void init_pahdump();
 

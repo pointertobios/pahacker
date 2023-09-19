@@ -2,9 +2,6 @@
 
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 
-typedef unsigned char u8;
-typedef u8 bool;
-
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <stdlib.h>
@@ -67,7 +64,7 @@ void dumpf_blkmap_build()
     meta_block.blkmap = dumpf_size() / PAGE_SIZE;
     dumpf_mapblock *mapb_root = dumpf_malloc();
     mapb_root->base.wlock = 0;
-    mapb_root->next_block = 0;
+    mapb_root->base.next_block = 0;
     mapb_root->block_limit = (PAGE_SIZE - sizeof(dumpf_mapblock)) * 8;
     mapb_root->block_count = 0;
     dumpf_sync_block_to_file(meta_block.blkmap, mapb_root);
@@ -116,14 +113,14 @@ usize dumpf_alloc_block()
                 break;
             }
         }
-        if (!mapb->next_block)
+        if (!mapb->base.next_block)
         {
             break;
         }
         if (succeeded)
             break;
         dumpf_close_block(bid, mapb);
-        bid = mapb->next_block;
+        bid = mapb->base.next_block;
         dumpf_open_block(bid, mapb);
     }
     // 已经搜索到块地图结束
@@ -135,11 +132,11 @@ usize dumpf_alloc_block()
             dumpf_mapblock *newmapb = dumpf_malloc();
             newmapb->block_count = 1;
             newmapb->block_limit = (PAGE_SIZE - sizeof(dumpf_mapblock)) * 8;
-            newmapb->next_block = 0;
+            newmapb->base.next_block = 0;
             newmapb->map[0] |= 1;
             dumpf_close_block(newid, newmapb);
             dumpf_free(newmapb);
-            mapb->next_block = newid;
+            mapb->base.next_block = newid;
             dumpf_close_block(bid, mapb);
             dumpf_open_block(newid, mapb);
             count++;
@@ -152,6 +149,133 @@ usize dumpf_alloc_block()
     dumpf_free(mapb);
     return count;
 }
+
+void dumpf_addrtree_build()
+{
+    usize bid = meta_block.patree = dumpf_alloc_block();
+    dumpf_sync_block_to_file(0, &meta_block);
+    dumpf_addrtreeblock *patreeb = dumpf_malloc();
+    patreeb->base.wlock = 0;
+    patreeb->base.next_block = 0;
+    patreeb->length = 0;
+    patreeb->available = DUMPF_ADDRTREEBLK_AVALABLE;
+    patreeb->start_nid = 0;
+    dumpf_sync_block_to_file(bid, patreeb);
+    dumpf_free(patreeb);
+}
+
+/**
+ * @brief 将地址二叉树的储存容量增大一个块
+ *
+ */
+void dumpf_addrtree_extend()
+{
+    usize bid = dumpf_alloc_block();
+    dumpf_addrtreeblock *patb = dumpf_malloc();
+    usize id = meta_block.patree;
+    dumpf_open_block(id, patb);
+    while (patb->base.next_block)
+    {
+        dumpf_close_block(id, patb);
+        id = patb->base.next_block;
+        dumpf_open_block(id, patb);
+    }
+    patb->base.next_block = bid;
+    dumpf_close_block(id, patb);
+    memset(patb, 0, PAGE_SIZE);
+    patb->base.wlock = 0;
+    patb->base.next_block = 0;
+    patb->length = 0;
+    patb->available = DUMPF_ADDRTREEBLK_AVALABLE;
+    patb->start_nid += patb->available;
+    dumpf_close_block(bid, patb);
+    dumpf_free(patb);
+}
+
+/**
+ * @brief 为地址二叉树分配一个新节点
+ *
+ * @return usize
+ */
+usize dumpf_addrtree_alloc_node()
+{
+    usize bid = meta_block.patree;
+    dumpf_addrtreeblock *patb = dumpf_malloc();
+    dumpf_open_block(bid, patb);
+    usize nid = 0;
+    bool succeeded = 0;
+    while (1)
+    {
+        for (; (nid - patb->start_nid) < patb->length; nid++)
+        {
+            if (!patb->addrtree[nid - patb->start_nid].available)
+            {
+                patb->addrtree[nid - patb->start_nid].available = 1;
+                succeeded = 1;
+                break;
+            }
+        }
+        if (succeeded)
+            break;
+        if (!patb->base.next_block)
+            break;
+        dumpf_close_block(bid, patb);
+        bid = patb->base.next_block;
+        dumpf_open_block(bid, patb);
+    }
+    if (succeeded)
+    {
+        dumpf_close_block(bid, patb);
+        dumpf_free(patb);
+        return nid;
+    }
+    if (patb->length == patb->available)
+    {
+        dumpf_close_block(bid, patb);
+        dumpf_addrtree_extend();
+        dumpf_open_block(bid, patb);
+        bid = patb->base.next_block;
+        dumpf_open_block(bid, patb);
+    }
+    patb->length++;
+    patb->addrtree[nid - patb->start_nid].available = 1;
+    dumpf_close_block(bid, patb);
+    dumpf_free(patb);
+    return nid;
+}
+
+/**
+ * @brief 获取地址二叉树的一个节点
+ *
+ * @param nid
+ * @param blk 需自己分配内存使用
+ * @param _bid 需自己分配内存使用
+ * @return addrp_node*
+ */
+addrp_node *dumpf_addrtree_getnode(usize nid, dumpf_addrtreeblock *blk, usize *_bid)
+{
+    usize bid = meta_block.patree;
+    dumpf_addrtreeblock *patb = dumpf_malloc();
+    dumpf_open_block(bid, patb);
+    for (usize i = 1; i < nid / DUMPF_ADDRTREEBLK_AVALABLE; i++)
+    {
+        dumpf_close_block(bid, patb);
+        bid = patb->base.next_block;
+        dumpf_open_block(bid, patb);
+    }
+    memcpy(blk, patb, PAGE_SIZE);
+    dumpf_free(patb);
+    *_bid = bid;
+    return &(blk->addrtree[nid - blk->start_nid]);
+}
+
+#define dumpf_addrtree_node_set(nid, memb, val)          \
+    dumpf_addrtreeblock *blk = dumpf_malloc();           \
+    usize *bid = malloc(sizeof(usize));                  \
+    dumpf_addrtree_getnode(nid, blk, bid)->(memb) = val; \
+    dumpf_close_block(*bid, blk);                        \
+    dumpf_free(blk);                                     \
+    free(bid);
 
 /**
  * @brief 初始化dumpf
@@ -188,6 +312,10 @@ void dumpf_init()
     if (!meta_block.blkmap)
     {
         dumpf_blkmap_build();
+    }
+    if (!meta_block.patree)
+    {
+        dumpf_addrtree_build();
     }
 }
 
