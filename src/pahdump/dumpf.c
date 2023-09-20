@@ -269,13 +269,25 @@ addrp_node *dumpf_addrtree_getnode(usize nid, dumpf_addrtreeblock *blk, usize *_
     return &(blk->addrtree[nid - blk->start_nid]);
 }
 
-#define dumpf_addrtree_node_set(nid, memb, val)          \
-    dumpf_addrtreeblock *blk = dumpf_malloc();           \
-    usize *bid = malloc(sizeof(usize));                  \
-    dumpf_addrtree_getnode(nid, blk, bid)->(memb) = val; \
-    dumpf_close_block(*bid, blk);                        \
-    dumpf_free(blk);                                     \
-    free(bid);
+#define dumpf_addrtree_node_set(nid, memb, val)            \
+    {                                                      \
+        dumpf_addrtreeblock *blk = dumpf_malloc();         \
+        usize *bid = malloc(sizeof(usize));                \
+        dumpf_addrtree_getnode(nid, blk, bid)->memb = val; \
+        dumpf_close_block(*bid, blk);                      \
+        dumpf_free(blk);                                   \
+        free(bid);                                         \
+    }
+
+#define dumpf_addrtree_node_get(nid, memb, val)             \
+    {                                                       \
+        dumpf_addrtreeblock *blk = dumpf_malloc();          \
+        usize *bid = malloc(sizeof(usize));                 \
+        *val = dumpf_addrtree_getnode(nid, blk, bid)->memb; \
+        dumpf_close_block(*bid, blk);                       \
+        dumpf_free(blk);                                    \
+        free(bid);                                          \
+    }
 
 /**
  * @brief 初始化dumpf
@@ -327,4 +339,68 @@ void init_pahdump()
 
 void save_page(unsigned char *page, addr_t phaddr)
 {
+    bool root_node_avai;
+    dumpf_addrtree_node_get(0, available, &root_node_avai);
+    if (!root_node_avai)
+    {
+        dumpf_addrtree_alloc_node();
+        dumpf_addrtree_node_set(0, left, 0);
+        dumpf_addrtree_node_set(0, right, 0);
+        dumpf_addrtree_node_set(0, pair.addr, phaddr);
+        usize bid = dumpf_alloc_block();
+        dumpf_addrtree_node_set(0, pair.block, bid);
+        dumpf_sync_block_to_file(bid, page);
+        return;
+    }
+    usize nid = 0;
+    usize left, right;
+    while (left || right)
+    {
+        addr_t nad;
+        dumpf_addrtree_node_get(nid, left, &left);
+        dumpf_addrtree_node_get(nid, right, &right);
+        dumpf_addrtree_node_get(nid, pair.addr, &nad);
+        if (phaddr < nad && !left)
+        {
+            usize id = dumpf_addrtree_alloc_node();
+            dumpf_addrtree_node_set(nid, left, id);
+
+            dumpf_addrtree_node_set(id, left, 0);
+            dumpf_addrtree_node_set(id, right, 0);
+            dumpf_addrtree_node_set(id, pair.addr, phaddr);
+            usize bid = dumpf_alloc_block();
+            dumpf_addrtree_node_set(id, pair.block, bid);
+            dumpf_sync_block_to_file(bid, page);
+            return;
+        }
+        else if (phaddr > nad && !right)
+        {
+            usize id = dumpf_addrtree_alloc_node();
+            dumpf_addrtree_node_set(nid, right, id);
+
+            dumpf_addrtree_node_set(id, left, 0);
+            dumpf_addrtree_node_set(id, right, 0);
+            dumpf_addrtree_node_set(id, pair.addr, phaddr);
+            usize bid = dumpf_alloc_block();
+            dumpf_addrtree_node_set(id, pair.block, bid);
+            dumpf_sync_block_to_file(bid, page);
+            return;
+        }
+        else if (phaddr == nad)
+        {
+            usize bid;
+            dumpf_addrtree_node_get(nid, pair.block, &bid);
+            dumpf_sync_block_to_file(bid, page);
+            return;
+        }
+
+        if (phaddr < nad)
+        {
+            nid = left;
+        }
+        else if (phaddr > nad)
+        {
+            nid = right;
+        }
+    }
 }
