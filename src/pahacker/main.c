@@ -77,6 +77,7 @@ void scan(unsigned short pid)
         return;
     unsigned int cpunum = sysconf(_SC_NPROCESSORS_ONLN); // 获取cpu数量
     cpunum &= ~7;
+
     // attach到进程
     ptrace(PTRACE_ATTACH, pid, NULL, NULL);
     // 第一段地址空间

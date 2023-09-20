@@ -62,6 +62,7 @@ void dumpf_sync_block_to_file(usize block_id, void *block)
 void dumpf_blkmap_build()
 {
     meta_block.blkmap = dumpf_size() / PAGE_SIZE;
+    dumpf_sync_block_to_file(0, &meta_block);
     dumpf_mapblock *mapb_root = dumpf_malloc();
     mapb_root->base.wlock = 0;
     mapb_root->base.next_block = 0;
@@ -71,17 +72,21 @@ void dumpf_blkmap_build()
     free(mapb_root);
 }
 
-#define dumpf_open_block(bid, blkmem)                   \
-    do                                                  \
-    {                                                   \
-        dumpf_sync_block_from_file((bid), (blkmem), 0); \
-    } while ((blkmem)->base.wlock);                     \
-    (blkmem)->base.wlock = 1;                           \
-    dumpf_sync_block_to_file(bid, blkmem);
+#define dumpf_open_block(bid, blkmem)                       \
+    {                                                       \
+        do                                                  \
+        {                                                   \
+            dumpf_sync_block_from_file((bid), (blkmem), 0); \
+        } while ((blkmem)->base.wlock);                     \
+        (blkmem)->base.wlock = 1;                           \
+        dumpf_sync_block_to_file(bid, blkmem);              \
+    }
 
-#define dumpf_close_block(bid, blkmem) \
-    blkmem->base.wlock = 0;            \
-    dumpf_sync_block_to_file(bid, blkmem);
+#define dumpf_close_block(bid, blkmem)         \
+    {                                          \
+        blkmem->base.wlock = 0;                \
+        dumpf_sync_block_to_file(bid, blkmem); \
+    }
 
 /**
  * @brief 请求一个新的块
@@ -269,24 +274,24 @@ addrp_node *dumpf_addrtree_getnode(usize nid, dumpf_addrtreeblock *blk, usize *_
     return &(blk->addrtree[nid - blk->start_nid]);
 }
 
-#define dumpf_addrtree_node_set(nid, memb, val)            \
-    {                                                      \
-        dumpf_addrtreeblock *blk = dumpf_malloc();         \
-        usize *bid = malloc(sizeof(usize));                \
-        dumpf_addrtree_getnode(nid, blk, bid)->memb = val; \
-        dumpf_close_block(*bid, blk);                      \
-        dumpf_free(blk);                                   \
-        free(bid);                                         \
+#define dumpf_addrtree_node_set(nid, memb, val)              \
+    {                                                        \
+        dumpf_addrtreeblock *blk = dumpf_malloc();           \
+        usize *__bid = malloc(sizeof(usize));                \
+        dumpf_addrtree_getnode(nid, blk, __bid)->memb = val; \
+        dumpf_close_block(*__bid, blk);                      \
+        dumpf_free(blk);                                     \
+        free(__bid);                                         \
     }
 
-#define dumpf_addrtree_node_get(nid, memb, val)             \
-    {                                                       \
-        dumpf_addrtreeblock *blk = dumpf_malloc();          \
-        usize *bid = malloc(sizeof(usize));                 \
-        *val = dumpf_addrtree_getnode(nid, blk, bid)->memb; \
-        dumpf_close_block(*bid, blk);                       \
-        dumpf_free(blk);                                    \
-        free(bid);                                          \
+#define dumpf_addrtree_node_get(nid, memb, val)               \
+    {                                                         \
+        dumpf_addrtreeblock *blk = dumpf_malloc();            \
+        usize *__bid = malloc(sizeof(usize));                 \
+        *val = dumpf_addrtree_getnode(nid, blk, __bid)->memb; \
+        dumpf_close_block(*__bid, blk);                       \
+        dumpf_free(blk);                                      \
+        free(__bid);                                          \
     }
 
 /**
