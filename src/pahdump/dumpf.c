@@ -17,6 +17,7 @@ int PAGE_SIZE;
 int dumpf_fd;
 
 dumpf_metablock meta_block;
+u8 reserved[1048576];
 
 usize dumpf_size()
 {
@@ -30,7 +31,9 @@ usize dumpf_size()
 
 void *dumpf_malloc()
 {
-    return malloc(PAGE_SIZE);
+    void *m = malloc(PAGE_SIZE);
+    memset(m, 0, PAGE_SIZE);
+    return m;
 }
 
 #define dumpf_free(blkmem) free(blkmem)
@@ -56,7 +59,7 @@ void dumpf_sync_block_from_file(usize block_id, void *block, usize length)
 void dumpf_sync_block_to_file(usize block_id, void *block)
 {
     lseek(dumpf_fd, block_id * PAGE_SIZE, SEEK_SET);
-    write(dumpf_fd, block, sizeof(PAGE_SIZE));
+    write(dumpf_fd, block, PAGE_SIZE);
 }
 
 void dumpf_blkmap_build()
@@ -299,6 +302,7 @@ addrp_node *dumpf_addrtree_getnode(usize nid, dumpf_addrtreeblock *blk, usize *_
  */
 void dumpf_init()
 {
+    memset(reserved, 0, PAGE_SIZE);
     int err;
     struct stat st;
     err = stat(DUMP_PATH, &st);
@@ -311,7 +315,7 @@ void dumpf_init()
     if (err < 0)
     {
         dumpf_new_metablock(&meta_block);
-        write(dumpf_fd, &meta_block, sizeof(dumpf_metablock));
+        write(dumpf_fd, &meta_block, PAGE_SIZE);
     }
     else
     {
